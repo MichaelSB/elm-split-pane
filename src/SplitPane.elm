@@ -58,8 +58,8 @@ Check out the [examples][] to see how it works.
 
 import Html exposing (Html, span, div, Attribute)
 import Html.Attributes exposing (class, style)
-import Html.Events exposing (onWithOptions)
-import Mouse
+import Html.Events exposing (custom)
+import Browser.Events as BEvents
 import Json.Decode as Json exposing (field, at)
 import Maybe
 import Bound
@@ -210,9 +210,9 @@ px x bound =
         init Horizontal
 -}
 init : Orientation -> State
-init orientation =
+init o =
     State
-        { orientation = orientation
+        { orientation = o
         , splitterPosition = percentage 0.5 Nothing
         , dragState = Draggable Nothing
         }
@@ -224,11 +224,11 @@ init orientation =
 
 domInfoToPosition : DOMInfo -> Position
 domInfoToPosition { x, y, touchX, touchY } =
-    case ( x, y, touchX, touchY ) of
-        ( _, _, Just posX, Just posY ) ->
+    case ( (x, y), (touchX, touchY) ) of
+        ( (_, _), (Just posX, Just posY) ) ->
             { x = posX, y = posY }
 
-        ( Just posX, Just posY, _, _ ) ->
+        ( (Just posX, Just posY), (_, _) ) ->
             { x = posX, y = posY }
 
         _ ->
@@ -349,20 +349,20 @@ customUpdate (UpdateConfig updateConfig) msg (State state) =
 
 
 resize : Orientation -> SizeUnit -> Position -> Int -> Int -> SizeUnit
-resize orientation splitterPosition step paneWidth paneHeight =
-    case orientation of
+resize o splitterPosition step paneWidth paneHeight =
+    case o of
         Horizontal ->
             case splitterPosition of
-                Px px ->
-                    Px <| updateValue (\v -> v + step.x) px
+                Px pxx ->
+                    Px <| updateValue (\v -> v + step.x) pxx
 
                 Percentage p ->
                     Percentage <| updateValue (\v -> v + toFloat step.x / toFloat paneWidth) p
 
         Vertical ->
             case splitterPosition of
-                Px px ->
-                    Px <| updateValue (\v -> v + step.y) px
+                Px pxx ->
+                    Px <| updateValue (\v -> v + step.y) pxx
 
                 Percentage p ->
                     Percentage <| updateValue (\v -> v + toFloat step.y / toFloat paneHeight) p
@@ -387,19 +387,17 @@ type CustomSplitter msg
 
 
 createDefaultSplitterDetails : Orientation -> DragState -> HtmlDetails msg
-createDefaultSplitterDetails orientation dragState =
-    case orientation of
+createDefaultSplitterDetails o dragState =
+    case o of
         Horizontal ->
             { attributes =
-                [ defaultHorizontalSplitterStyle dragState
-                ]
+                 defaultHorizontalSplitterStyle dragState
             , children = []
             }
 
         Vertical ->
             { attributes =
-                [ defaultVerticalSplitterStyle dragState
-                ]
+                 defaultVerticalSplitterStyle dragState
             , children = []
             }
 
@@ -483,19 +481,17 @@ view (ViewConfig viewConfig) firstView secondView (State state) =
             getConcreteSplitter viewConfig state.orientation state.dragState
     in
         div
-            [ class "pane-container"
-            , paneContainerStyle state.orientation
-            ]
+            ([ class "pane-container"
+            
+            ] ++ paneContainerStyle state.orientation)
             [ div
-                [ class "pane-first-view"
-                , firstChildViewStyle (State state)
-                ]
+                ([ class "pane-first-view"
+                ] ++ firstChildViewStyle (State state))
                 [ firstView ]
             , splitter
             , div
-                [ class "pane-second-view"
-                , secondChildViewStyle (State state)
-                ]
+                ([ class "pane-second-view"
+                ] ++ secondChildViewStyle (State state))
                 [ secondView ]
             ]
 
@@ -507,28 +503,31 @@ getConcreteSplitter :
     -> Orientation
     -> DragState
     -> Html msg
-getConcreteSplitter viewConfig orientation dragState =
+getConcreteSplitter viewConfig o dragState =
     case viewConfig.splitter of
         Just (CustomSplitter splitter) ->
             splitter
 
         Nothing ->
-            case createCustomSplitter viewConfig.toMsg <| createDefaultSplitterDetails orientation dragState of
+            case createCustomSplitter viewConfig.toMsg <| createDefaultSplitterDetails o dragState of
                 CustomSplitter defaultSplitter ->
                     defaultSplitter
 
 
 
 -- STYLES
+styles : List (String, String) -> List (Attribute msg)
+styles s =
+    List.map (\(k, v) ->
+        style k v) s
 
-
-paneContainerStyle : Orientation -> Attribute a
-paneContainerStyle orientation =
-    style
+paneContainerStyle : Orientation -> List (Attribute msg)
+paneContainerStyle o =
+    styles
         [ ( "overflow", "hidden" )
         , ( "display", "flex" )
         , ( "flexDirection"
-          , case orientation of
+          , case o of
                 Horizontal ->
                     "row"
 
@@ -543,17 +542,17 @@ paneContainerStyle orientation =
         ]
 
 
-firstChildViewStyle : State -> Attribute a
+firstChildViewStyle : State -> List (Attribute msg)
 firstChildViewStyle (State state) =
     case state.splitterPosition of
-        Px px ->
+        Px pxx ->
             let
                 v =
-                    (toString <| toFloat (getValue px)) ++ "px"
+                    (String.fromFloat <| toFloat (getValue pxx)) ++ "px"
             in
                 case state.orientation of
                     Horizontal ->
-                        style
+                        styles
                             [ ( "display", "flex" )
                             , ( "width", v )
                             , ( "height", "100%" )
@@ -563,7 +562,7 @@ firstChildViewStyle (State state) =
                             ]
 
                     Vertical ->
-                        style
+                        styles
                             [ ( "display", "flex" )
                             , ( "width", "100%" )
                             , ( "height", v )
@@ -575,9 +574,9 @@ firstChildViewStyle (State state) =
         Percentage p ->
             let
                 v =
-                    toString <| getValue p
+                    getValue p |> String.fromFloat
             in
-                style
+                styles
                     [ ( "display", "flex" )
                     , ( "flex", v )
                     , ( "width", "100%" )
@@ -588,11 +587,11 @@ firstChildViewStyle (State state) =
                     ]
 
 
-secondChildViewStyle : State -> Attribute a
+secondChildViewStyle : State -> List (Attribute msg)
 secondChildViewStyle (State state) =
     case state.splitterPosition of
         Px _ ->
-            style
+            styles
                 [ ( "display", "flex" )
                 , ( "flex", "1" )
                 , ( "width", "100%" )
@@ -605,9 +604,9 @@ secondChildViewStyle (State state) =
         Percentage p ->
             let
                 v =
-                    toString <| 1 - getValue p
+                    1 - getValue p |> String.fromFloat
             in
-                style
+                styles
                     [ ( "display", "flex" )
                     , ( "flex", v )
                     , ( "width", "100%" )
@@ -618,9 +617,9 @@ secondChildViewStyle (State state) =
                     ]
 
 
-defaultVerticalSplitterStyle : DragState -> Attribute a
+defaultVerticalSplitterStyle : DragState -> List (Attribute msg)
 defaultVerticalSplitterStyle dragState =
-    style
+    styles
         (baseDefaultSplitterStyles
             ++ [ ( "height", "11px" )
                , ( "width", "100%" )
@@ -637,9 +636,9 @@ defaultVerticalSplitterStyle dragState =
         )
 
 
-defaultHorizontalSplitterStyle : DragState -> Attribute a
+defaultHorizontalSplitterStyle : DragState -> List (Attribute msg)
 defaultHorizontalSplitterStyle dragState =
-    style
+    styles
         (baseDefaultSplitterStyles
             ++ [ ( "width", "11px" )
                , ( "height", "100%" )
@@ -676,27 +675,77 @@ baseDefaultSplitterStyles =
 
 onMouseDown : (Msg -> msg) -> Attribute msg
 onMouseDown toMsg =
-    onWithOptions "mousedown" { preventDefault = True, stopPropagation = False } <| Json.map (toMsg << SplitterClick) domInfo
+    let
+        options message =
+            { message = message
+            , preventDefault = True
+            , stopPropagation = True
+            }
+        decoder = 
+            Json.map (toMsg << SplitterClick) domInfo
+            |> Json.map options
+    in
+        custom "mousedown" decoder
 
 
 onTouchStart : (Msg -> msg) -> Attribute msg
 onTouchStart toMsg =
-    onWithOptions "touchstart" { preventDefault = True, stopPropagation = True } <| Json.map (toMsg << SplitterClick) domInfo
+    let
+        options message =
+            { message = message
+            , preventDefault = True
+            , stopPropagation = True
+            }
+        decoder = 
+            Json.map (toMsg << SplitterClick) domInfo
+            |> Json.map options
+    in
+        custom "touchstart" decoder
 
 
 onTouchEnd : (Msg -> msg) -> Attribute msg
 onTouchEnd toMsg =
-    onWithOptions "touchend" { preventDefault = True, stopPropagation = True } <| Json.map (toMsg << SplitterLeftAlone << domInfoToPosition) domInfo
+    let
+        options message =
+            { message = message
+            , preventDefault = True
+            , stopPropagation = True
+            }
+        decoder = 
+            Json.map (toMsg << SplitterClick) domInfo
+            |> Json.map options
+    in
+        custom "touchend" decoder
 
 
 onTouchCancel : (Msg -> msg) -> Attribute msg
 onTouchCancel toMsg =
-    onWithOptions "touchcancel" { preventDefault = True, stopPropagation = True } <| Json.map (toMsg << SplitterLeftAlone << domInfoToPosition) domInfo
+    let
+        options message =
+            { message = message
+            , preventDefault = True
+            , stopPropagation = True
+            }
+        decoder = 
+            Json.map (toMsg << SplitterClick) domInfo
+            |> Json.map options
+    in
+        custom "touchcancel" decoder
 
 
 onTouchMove : (Msg -> msg) -> Attribute msg
 onTouchMove toMsg =
-    onWithOptions "touchmove" { preventDefault = True, stopPropagation = True } <| Json.map (toMsg << SplitterMove << domInfoToPosition) domInfo
+    let
+        options message =
+            { message = message
+            , preventDefault = True
+            , stopPropagation = True
+            }
+        decoder = 
+            Json.map (toMsg << SplitterClick) domInfo
+            |> Json.map options
+    in
+        custom "touchmove" decoder
 
 
 {-| The position of the touch relative to the whole document. So if you are
@@ -726,7 +775,12 @@ domInfo =
         (at [ "currentTarget", "parentElement", "clientHeight" ] Json.int)
 
 
-
+mouseMoveDecoder :  Json.Decoder Position
+mouseMoveDecoder =
+    Json.map2 Position
+        (Json.field "pageX" Json.int)
+        (Json.field "pageY" Json.int)
+    
 -- SUBSCRIPTIONS
 
 
@@ -737,9 +791,8 @@ subscriptions (State state) =
     case state.dragState of
         Draggable (Just _) ->
             Sub.batch
-                [ Mouse.moves SplitterMove
-                , Mouse.ups SplitterLeftAlone
+                [ Sub.map SplitterMove (BEvents.onMouseMove mouseMoveDecoder)
+                , Sub.map SplitterLeftAlone (BEvents.onMouseUp mouseMoveDecoder)
                 ]
-
         _ ->
             Sub.none
