@@ -21,6 +21,7 @@ module SplitPane
         , draggable
         , percentage
         , px
+        , MousePosition
         )
 
 {-|
@@ -61,7 +62,8 @@ import Html.Attributes exposing (class, style)
 import Html.Events exposing (custom)
 import Browser.Events as BEvents
 import Json.Decode as Json exposing (field, at)
-import Maybe
+import Json.Decode.Pipeline exposing (required)
+
 import Bound
     exposing
         ( Bounded
@@ -126,8 +128,8 @@ type State
 -}
 type Msg
     = SplitterClick DOMInfo
-    | SplitterMove Position
-    | SplitterLeftAlone Position
+    | SplitterMove MousePosition
+    | SplitterLeftAlone MousePosition
 
 
 {-| Describes a mouse/touch position
@@ -137,6 +139,16 @@ type alias Position =
     , y : Int
     }
 
+type alias MousePosition =
+    { clientX : Int
+    , clientY : Int
+    , pageX : Int
+    , pageY : Int
+    , screenX : Int
+    , screenY : Int
+    , offsetX : Int
+    , offsetY : Int
+    }
 
 {-| Sets whether the pane is draggable or not
 -}
@@ -318,8 +330,8 @@ customUpdate (UpdateConfig updateConfig) msg (State state) =
         ( Draggable (Just { paneInfo, anchor }), SplitterMove newRequestedPosition ) ->
             let
                 step =
-                    { x = newRequestedPosition.x - anchor.x
-                    , y = newRequestedPosition.y - anchor.y
+                    { x = newRequestedPosition.clientX - anchor.x
+                    , y = newRequestedPosition.clientY - anchor.y
                     }
 
                 newSplitterPosition =
@@ -336,8 +348,8 @@ customUpdate (UpdateConfig updateConfig) msg (State state) =
                                         , height = paneInfo.height
                                         }
                                     , anchor =
-                                        { x = newRequestedPosition.x
-                                        , y = newRequestedPosition.y
+                                        { x = newRequestedPosition.clientX
+                                        , y = newRequestedPosition.clientY
                                         }
                                     }
                     }
@@ -775,12 +787,19 @@ domInfo =
         (at [ "currentTarget", "parentElement", "clientHeight" ] Json.int)
 
 
-mouseMoveDecoder :  Json.Decoder Position
-mouseMoveDecoder =
-    Json.map2 Position
-        (Json.field "pageX" Json.int)
-        (Json.field "pageY" Json.int)
-    
+mousePositionDecoder :  Json.Decoder MousePosition
+mousePositionDecoder =
+    Json.succeed MousePosition
+    |> required "clientX" Json.int
+    |> required "clientY" Json.int
+    |> required "pageX" Json.int
+    |> required "pageY" Json.int
+    |> required "screenX" Json.int
+    |> required "screenY" Json.int
+    |> required "offsetX" Json.int
+    |> required "offsetY" Json.int
+
+
 -- SUBSCRIPTIONS
 
 
@@ -791,8 +810,8 @@ subscriptions (State state) =
     case state.dragState of
         Draggable (Just _) ->
             Sub.batch
-                [ Sub.map SplitterMove (BEvents.onMouseMove mouseMoveDecoder)
-                , Sub.map SplitterLeftAlone (BEvents.onMouseUp mouseMoveDecoder)
+                [ Sub.map SplitterMove (BEvents.onMouseMove mousePositionDecoder)
+                , Sub.map SplitterLeftAlone (BEvents.onMouseUp mousePositionDecoder)
                 ]
         _ ->
             Sub.none
