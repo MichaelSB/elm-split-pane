@@ -7,7 +7,7 @@ module SplitPane
         , CustomSplitter
         , HtmlDetails
         , State
-        , Msg
+        , Msg(..)
         , Orientation(..)
         , SizeUnit(..)
         , subscriptions
