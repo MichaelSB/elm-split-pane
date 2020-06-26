@@ -1,6 +1,6 @@
 # Split Pane
 
-A split pane for Elm.
+A split pane for Elm. Port to elm-19.1
 
 Embed two views beside each other with a resizable splitter in between.
 
